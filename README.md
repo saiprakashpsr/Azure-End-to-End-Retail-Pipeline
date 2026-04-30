@@ -51,6 +51,8 @@ Plaintext
 Infrastructure: Deploy an Azure SQL Database and an ADLS Gen2 account with bronze, silver, and gold containers.
 
 Database: Run the scripts in /sql_scripts to set up the schema.
+<img width="2362" height="1324" alt="image" src="https://github.com/user-attachments/assets/3a7888c5-6e13-47ad-848d-f5123f2e5a2a" />
+
 
 Pipeline: Import the JSON files in /adf_code into your Azure Data Factory instance.
 
