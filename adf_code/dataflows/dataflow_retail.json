@@ -1,0 +1,193 @@
+{
+    "name": "dataflow_retail",
+    "properties": {
+        "type": "MappingDataFlow",
+        "typeProperties": {
+            "sources": [
+                {
+                    "dataset": {
+                        "referenceName": "ds_raw_customer",
+                        "type": "DatasetReference"
+                    },
+                    "name": "Bronze0customer"
+                },
+                {
+                    "dataset": {
+                        "referenceName": "ds_raw_sales",
+                        "type": "DatasetReference"
+                    },
+                    "name": "Bronze0sales"
+                },
+                {
+                    "dataset": {
+                        "referenceName": "ds_raw_products",
+                        "type": "DatasetReference"
+                    },
+                    "name": "Bronze0products"
+                }
+            ],
+            "sinks": [
+                {
+                    "dataset": {
+                        "referenceName": "ds_silver_retail",
+                        "type": "DatasetReference"
+                    },
+                    "name": "output0retail"
+                },
+                {
+                    "dataset": {
+                        "referenceName": "ds_gold_retail",
+                        "type": "DatasetReference"
+                    },
+                    "name": "sink0gold0retail0adls"
+                },
+                {
+                    "dataset": {
+                        "referenceName": "ds_sqldb_retail_gold",
+                        "type": "DatasetReference"
+                    },
+                    "name": "sink0sqldb0gold0retail",
+                    "rejectedDataLinkedService": {
+                        "referenceName": "ls_adls",
+                        "type": "LinkedServiceReference"
+                    }
+                }
+            ],
+            "transformations": [
+                {
+                    "name": "removenullrows",
+                    "description": "!isNull(CustomerID)"
+                },
+                {
+                    "name": "replacenonewithtruenull",
+                    "description": "\nregexReplace"
+                },
+                {
+                    "name": "join0sales0customer",
+                    "description": "joining sales table and customer table using customerID"
+                },
+                {
+                    "name": "join0combined0products",
+                    "description": "joining the combined table with product table using productID"
+                },
+                {
+                    "name": "select1"
+                },
+                {
+                    "name": "select0gold0retail"
+                }
+            ],
+            "scriptLines": [
+                "source(output(",
+                "          CustomerID as double,",
+                "          CustomerName as string,",
+                "          Email as string,",
+                "          Phone as string,",
+                "          City as string,",
+                "          Country as string",
+                "     ),",
+                "     allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     ignoreNoFilesFound: false) ~> Bronze0customer",
+                "source(output(",
+                "          SaleID as short,",
+                "          CustomerID as short,",
+                "          ProductID as short,",
+                "          SaleDate as date,",
+                "          Quantity as short,",
+                "          TotalAmount as double",
+                "     ),",
+                "     allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     ignoreNoFilesFound: false) ~> Bronze0sales",
+                "source(output(",
+                "          ProductID as short,",
+                "          ProductName as string,",
+                "          Category as string,",
+                "          Price as short,",
+                "          StockQuantity as short",
+                "     ),",
+                "     allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     ignoreNoFilesFound: false) ~> Bronze0products",
+                "Bronze0customer filter(!isNull(CustomerID)) ~> removenullrows",
+                "removenullrows derive(Phone = iif(Phone == 'None', toString(null()), regexReplace(Phone, '[^0-9]', '')),",
+                "          CustomerID = toInteger(CustomerID)) ~> replacenonewithtruenull",
+                "Bronze0sales, replacenonewithtruenull join(Bronze0sales@CustomerID == replacenonewithtruenull@CustomerID,",
+                "     joinType:'inner',",
+                "     matchType:'exact',",
+                "     ignoreSpaces: false,",
+                "     broadcast: 'auto')~> join0sales0customer",
+                "join0sales0customer, Bronze0products join(Bronze0sales@ProductID == Bronze0products@ProductID,",
+                "     joinType:'inner',",
+                "     matchType:'exact',",
+                "     ignoreSpaces: false,",
+                "     broadcast: 'auto')~> join0combined0products",
+                "join0combined0products select(mapColumn(",
+                "          ProductID = Bronze0sales@ProductID,",
+                "          SaleDate,",
+                "          TotalAmount,",
+                "          Category",
+                "     ),",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true) ~> select1",
+                "join0combined0products select(mapColumn(",
+                "          ProductID = Bronze0sales@ProductID,",
+                "          SaleDate,",
+                "          TotalAmount,",
+                "          Category",
+                "     ),",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true) ~> select0gold0retail",
+                "select1 sink(allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     format: 'parquet',",
+                "     partitionFileNames:['Silver_retail.parquet'],",
+                "     umask: 0022,",
+                "     preCommands: [],",
+                "     postCommands: [],",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true,",
+                "     mapColumn(",
+                "          ProductID,",
+                "          SaleDate,",
+                "          TotalAmount,",
+                "          Category",
+                "     ),",
+                "     partitionBy('hash', 1)) ~> output0retail",
+                "select1 sink(allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     format: 'parquet',",
+                "     umask: 0022,",
+                "     preCommands: [],",
+                "     postCommands: [],",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true,",
+                "     mapColumn(",
+                "          ProductID,",
+                "          SaleDate,",
+                "          TotalAmount,",
+                "          Category",
+                "     ),",
+                "     partitionBy('hash', 1)) ~> sink0gold0retail0adls",
+                "select0gold0retail sink(allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     deletable:false,",
+                "     insertable:true,",
+                "     updateable:false,",
+                "     upsertable:false,",
+                "     format: 'table',",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true,",
+                "     errorHandlingOption: 'stopOnFirstError',",
+                "     mapColumn(",
+                "          ProductID,",
+                "          SaleDate,",
+                "          TotalAmount,",
+                "          Category",
+                "     ),",
+                "     partitionBy('hash', 1)) ~> sink0sqldb0gold0retail"
+            ]
+        }
+    }
+}

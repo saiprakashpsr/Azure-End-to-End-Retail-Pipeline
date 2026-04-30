@@ -1,0 +1,177 @@
+{
+    "name": "dataflow_reviews",
+    "properties": {
+        "type": "MappingDataFlow",
+        "typeProperties": {
+            "sources": [
+                {
+                    "dataset": {
+                        "referenceName": "ds_rest_comments",
+                        "type": "DatasetReference"
+                    },
+                    "name": "reviews0bronze0api"
+                },
+                {
+                    "dataset": {
+                        "referenceName": "ds_raw_products",
+                        "type": "DatasetReference"
+                    },
+                    "name": "bronze0products"
+                }
+            ],
+            "sinks": [
+                {
+                    "dataset": {
+                        "referenceName": "silver_reviews_parquet",
+                        "type": "DatasetReference"
+                    },
+                    "name": "silver0reviews0sink"
+                },
+                {
+                    "dataset": {
+                        "referenceName": "ds_retail_sink_gold_adls",
+                        "type": "DatasetReference"
+                    },
+                    "name": "sink0gold",
+                    "rejectedDataLinkedService": {
+                        "referenceName": "ls_adls",
+                        "type": "LinkedServiceReference"
+                    }
+                },
+                {
+                    "dataset": {
+                        "referenceName": "ds_sqldb_gold_reviews",
+                        "type": "DatasetReference"
+                    },
+                    "name": "sink0gold0sqldb0review"
+                }
+            ],
+            "transformations": [
+                {
+                    "name": "bronze0reviews"
+                },
+                {
+                    "name": "join0silver"
+                },
+                {
+                    "name": "convertreviewtorating"
+                },
+                {
+                    "name": "select1"
+                },
+                {
+                    "name": "gold0review0select"
+                }
+            ],
+            "scriptLines": [
+                "source(output(",
+                "          body as (body as string, email as string, id as short, name as string, postId as short),",
+                "          headers as [string,string]",
+                "     ),",
+                "     allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     httpMethod: 'GET',",
+                "     timeout: 30,",
+                "     requestInterval: 0,",
+                "     paginationRules: ['supportRFC5988' -> 'true'],",
+                "     responseFormat: ['type' -> 'json', 'documentForm' -> 'documentPerLine']) ~> reviews0bronze0api",
+                "source(output(",
+                "          ProductID as short,",
+                "          ProductName as string,",
+                "          Category as string,",
+                "          Price as short,",
+                "          StockQuantity as short",
+                "     ),",
+                "     allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     ignoreNoFilesFound: false) ~> bronze0products",
+                "reviews0bronze0api select(mapColumn(",
+                "          ProductID = body.postId,",
+                "          Email = body.email,",
+                "          Name = body.name,",
+                "          Rating = body.body",
+                "     ),",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true) ~> bronze0reviews",
+                "bronze0products, convertreviewtorating join(bronze0products@ProductID == bronze0reviews@ProductID,",
+                "     joinType:'left',",
+                "     matchType:'exact',",
+                "     ignoreSpaces: false,",
+                "     broadcast: 'auto')~> join0silver",
+                "bronze0reviews derive(ReviewRating = toInteger(length(toString(byName('Rating'))) % 5 + 1)) ~> convertreviewtorating",
+                "join0silver select(mapColumn(",
+                "          ProductID = bronze0products@ProductID,",
+                "          ProductName,",
+                "          Category,",
+                "          Price,",
+                "          StockQuantity,",
+                "          ProductID = bronze0reviews@ProductID,",
+                "          Email,",
+                "          Name,",
+                "          Rating,",
+                "          ReviewRating",
+                "     ),",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true) ~> select1",
+                "join0silver select(mapColumn(",
+                "          ProductID = bronze0products@ProductID,",
+                "          ProductName,",
+                "          ReviewRating",
+                "     ),",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true) ~> gold0review0select",
+                "select1 sink(allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     format: 'parquet',",
+                "     partitionFileNames:['silver_reviews_products.parquet'],",
+                "     umask: 0022,",
+                "     preCommands: [],",
+                "     postCommands: [],",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true,",
+                "     mapColumn(",
+                "          ProductID,",
+                "          ProductName,",
+                "          Category,",
+                "          Price,",
+                "          StockQuantity,",
+                "          Email,",
+                "          Name,",
+                "          Rating,",
+                "          ReviewRating",
+                "     ),",
+                "     partitionBy('hash', 1)) ~> silver0reviews0sink",
+                "gold0review0select sink(allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     format: 'parquet',",
+                "     umask: 0022,",
+                "     preCommands: [],",
+                "     postCommands: [],",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true,",
+                "     mapColumn(",
+                "          ProductID,",
+                "          ProductName,",
+                "          ReviewRating",
+                "     ),",
+                "     partitionBy('hash', 1)) ~> sink0gold",
+                "gold0review0select sink(allowSchemaDrift: true,",
+                "     validateSchema: false,",
+                "     deletable:false,",
+                "     insertable:true,",
+                "     updateable:false,",
+                "     upsertable:false,",
+                "     format: 'table',",
+                "     skipDuplicateMapInputs: true,",
+                "     skipDuplicateMapOutputs: true,",
+                "     errorHandlingOption: 'stopOnFirstError',",
+                "     mapColumn(",
+                "          ProductID,",
+                "          ProductName,",
+                "          ReviewRating",
+                "     ),",
+                "     partitionBy('hash', 1)) ~> sink0gold0sqldb0review"
+            ]
+        }
+    }
+}
